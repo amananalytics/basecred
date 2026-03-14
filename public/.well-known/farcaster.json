@@ -1,0 +1,18 @@
+{
+  "accountAssociation": {
+    "header": "",
+    "payload": "",
+    "signature": ""
+  },
+  "frame": {
+    "version": "1",
+    "name": "BaseCred",
+    "iconUrl": "https://basecred-phi.vercel.app/icon.png",
+    "homeUrl": "https://basecred-phi.vercel.app",
+    "imageUrl": "https://basecred-phi.vercel.app/og.png",
+    "buttonTitle": "Check Your Score",
+    "splashImageUrl": "https://basecred-phi.vercel.app/splash.png",
+    "splashBackgroundColor": "#060608",
+    "webhookUrl": "https://basecred-phi.vercel.app/api/webhook"
+  }
+}
