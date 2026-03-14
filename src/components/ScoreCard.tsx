@@ -1,249 +1,356 @@
 "use client";
 import { useState, useEffect } from "react";
 
-type Dimension = {
-  label: string;
-  desc: string;
-  score: number;
-  max: number;
-  icon: string;
-};
+type Dimension = { label: string; desc: string; score: number; max: number; icon: string; };
+type UserInfo = { username: string; displayName: string; avatar: string; fid: number; followers: number; following: number; };
 
-type UserInfo = {
-  username: string;
-  displayName: string;
-  avatar: string;
-  fid: number;
-  followers: number;
-  following: number;
-};
-
-function AnimatedNumber({ value, duration = 1200 }: { value: number; duration?: number }) {
-  const [display, setDisplay] = useState(0);
+function useCountUp(target: number, duration = 1400, active = false) {
+  const [val, setVal] = useState(0);
   useEffect(() => {
+    if (!active) return;
     let start = 0;
-    const step = value / (duration / 16);
-    const timer = setInterval(() => {
+    const step = target / (duration / 16);
+    const t = setInterval(() => {
       start += step;
-      if (start >= value) { setDisplay(value); clearInterval(timer); }
-      else setDisplay(Math.floor(start));
+      if (start >= target) { setVal(target); clearInterval(t); }
+      else setVal(Math.floor(start));
     }, 16);
-    return () => clearInterval(timer);
-  }, [value, duration]);
-  return <>{display}</>;
+    return () => clearInterval(t);
+  }, [target, duration, active]);
+  return val;
 }
 
-function ScoreRing({ score, max = 1000 }: { score: number; max?: number }) {
-  const pct = score / max;
-  const r = 80;
+function Ring({ score, max = 1000, active }: { score: number; max?: number; active: boolean }) {
+  const r = 90;
   const circ = 2 * Math.PI * r;
   const [offset, setOffset] = useState(circ);
   useEffect(() => {
-    setTimeout(() => setOffset(circ * (1 - pct)), 100);
-  }, [score, circ, pct]);
-
+    if (!active) return;
+    const id = setTimeout(() => setOffset(circ * (1 - score / max)), 200);
+    return () => clearTimeout(id);
+  }, [score, active, circ, max]);
+  const display = useCountUp(score, 1600, active);
+  const pct = score / max;
+  const ringColor = pct >= 0.7 ? "#CCFF00" : pct >= 0.5 ? "#00E5FF" : "#9B6DFF";
   return (
-    <svg width="200" height="200" className="rotate-[-90deg]">
-      <circle cx="100" cy="100" r={r} fill="none" stroke="#1a1a14" strokeWidth="12" />
-      <circle
-        cx="100" cy="100" r={r} fill="none"
-        stroke="#CCFF00" strokeWidth="12"
-        strokeDasharray={circ}
-        strokeDashoffset={offset}
-        strokeLinecap="round"
-        style={{ transition: "stroke-dashoffset 1.4s cubic-bezier(0.34, 1.56, 0.64, 1)" }}
-      />
-    </svg>
+    <div style={{ position: "relative", width: 200, height: 200, flexShrink: 0 }}>
+      <svg width="200" height="200" style={{ position: "absolute", transform: "rotate(-90deg)" }}>
+        <defs>
+          <filter id="glow"><feGaussianBlur stdDeviation="5" result="coloredBlur"/><feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <circle cx="100" cy="100" r={r} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="8"/>
+        <circle cx="100" cy="100" r={r} fill="none" stroke={ringColor} strokeWidth="8"
+          strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+          filter="url(#glow)"
+          style={{ transition: "stroke-dashoffset 1.8s cubic-bezier(0.16,1,0.3,1), stroke 0.5s ease" }}
+        />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontSize: "2.8rem", fontWeight: 900, fontFamily: "'Arial Black', sans-serif", color: "#fff", lineHeight: 1 }}>{display}</span>
+        <span style={{ fontFamily: "monospace", fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: "0.2em", marginTop: 4 }}>/ 1000</span>
+      </div>
+    </div>
   );
 }
 
+function Bar({ score, max, delay, color }: { score: number; max: number; delay: number; color: string }) {
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const id = setTimeout(() => setW((score / max) * 100), delay);
+    return () => clearTimeout(id);
+  }, [score, max, delay]);
+  return (
+    <div style={{ height: 3, background: "rgba(255,255,255,0.06)", borderRadius: 99, overflow: "hidden", marginTop: 10 }}>
+      <div style={{ height: "100%", width: `${w}%`, borderRadius: 99, background: color, transition: "width 1.4s cubic-bezier(0.16,1,0.3,1)", boxShadow: `0 0 10px ${color}88` }} />
+    </div>
+  );
+}
+
+const DIM_COLORS = ["#CCFF00", "#00E5FF", "#9B6DFF", "#FF6B9D", "#00FFB3"];
+
+function getGrade(score: number) {
+  if (score >= 850) return { label: "LEGENDARY", color: "#CCFF00" };
+  if (score >= 700) return { label: "ELITE", color: "#00E5FF" };
+  if (score >= 500) return { label: "CREDIBLE", color: "#9B6DFF" };
+  if (score >= 300) return { label: "EMERGING", color: "#FF6B9D" };
+  return { label: "ANON", color: "#555" };
+}
+
 export default function ScoreCard() {
-  const [address, setAddress] = useState("");
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [scores, setScores] = useState<Dimension[] | null>(null);
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [user, setUser] = useState<UserInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [visible, setVisible] = useState(false);
+  const [ready, setReady] = useState(false);
 
   const total = scores ? scores.reduce((a, b) => a + b.score, 0) : 0;
+  const grade = scores ? getGrade(total) : null;
 
-  const handleScore = async () => {
-    if (!address) return;
-    setLoading(true);
-    setScores(null);
-    setUserInfo(null);
-    setError(null);
-    setVisible(false);
-
+  const run = async () => {
+    if (!query.trim() || loading) return;
+    setLoading(true); setScores(null); setUser(null); setError(null); setReady(false);
     try {
-      const res = await fetch(`/api/score?username=${encodeURIComponent(address)}`);
+      const res = await fetch(`/api/score?username=${encodeURIComponent(query.trim())}`);
       const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Something went wrong");
-      } else {
-        setScores(data.scores);
-        setUserInfo(data.user);
-        setTimeout(() => setVisible(true), 100);
-      }
-    } catch {
-      setError("Network error — please try again");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getGrade = (score: number) => {
-    if (score >= 850) return "LEGENDARY";
-    if (score >= 700) return "ELITE";
-    if (score >= 500) return "CREDIBLE";
-    if (score >= 300) return "EMERGING";
-    return "ANON";
+      if (!res.ok) setError(data.error || "Not found");
+      else { setScores(data.scores); setUser(data.user); setTimeout(() => setReady(true), 100); }
+    } catch { setError("Network error — try again"); }
+    finally { setLoading(false); }
   };
 
   return (
-    <div className="w-full min-h-screen bg-[#0E0D09] flex flex-col items-center justify-start py-16 px-4">
-      <div className="w-full max-w-xl relative z-10">
+    <div style={{ minHeight: "100vh", background: "#060608", color: "#F0EDE6", fontFamily: "system-ui, sans-serif", overflowX: "hidden" }}>
 
-        {/* Header */}
-        <div className="mb-10">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-1 h-4 bg-[#CCFF00]" />
-            <span className="font-mono text-[10px] tracking-[0.3em] text-[#CCFF00] uppercase">BaseCred Protocol</span>
+      {/* Animated orbs */}
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, overflow: "hidden" }}>
+        {[
+          { w:700, h:700, bg:"rgba(155,109,255,0.18)", top:"-20%", left:"-15%", anim:"float1 9s ease-in-out infinite" },
+          { w:600, h:600, bg:"rgba(0,229,255,0.13)", top:"10%", right:"-10%", anim:"float2 11s ease-in-out infinite" },
+          { w:500, h:500, bg:"rgba(204,255,0,0.1)", bottom:"-5%", left:"30%", anim:"float3 13s ease-in-out infinite" },
+          { w:400, h:400, bg:"rgba(255,107,157,0.1)", top:"40%", left:"-10%", anim:"float4 15s ease-in-out infinite" },
+          { w:350, h:350, bg:"rgba(0,255,179,0.08)", bottom:"10%", right:"5%", anim:"float5 10s ease-in-out infinite" },
+        ].map((o, i) => (
+          <div key={i} style={{
+            position: "absolute",
+            width: o.w, height: o.h,
+            borderRadius: "50%",
+            background: `radial-gradient(circle, ${o.bg} 0%, transparent 70%)`,
+            top: o.top, left: o.left, right: o.right, bottom: o.bottom,
+            animation: o.anim,
+          }} />
+        ))}
+        {/* Subtle grid */}
+        <div style={{
+          position: "absolute", inset: 0,
+          backgroundImage: "linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px)",
+          backgroundSize: "64px 64px",
+        }} />
+      </div>
+
+      <div style={{ position: "relative", zIndex: 1, maxWidth: 680, margin: "0 auto", padding: "48px 24px 100px" }}>
+
+        {/* Nav */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 80 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 8, height: 8, background: "#CCFF00", borderRadius: "50%", boxShadow: "0 0 10px #CCFF00" }} />
+            <span style={{ fontFamily: "monospace", fontSize: 11, letterSpacing: "0.3em", color: "#CCFF00", fontWeight: 700 }}>BASECRED</span>
           </div>
-          <h1 className="text-[clamp(2.8rem,8vw,5rem)] font-black leading-[0.9] tracking-tighter text-[#F0EDE6] mb-3">
-            ONCHAIN<br />
-            <span style={{ WebkitTextStroke: "1px #CCFF00", color: "transparent" }}>
-              CREDIBILITY
-            </span>
-          </h1>
-          <p className="text-[#4a4a3a] font-mono text-xs tracking-widest">
-            TRANSPARENT · COMPOSABLE · EARNED
-          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            {["BASE", "FARCASTER"].map(tag => (
+              <span key={tag} style={{ fontFamily: "monospace", fontSize: 9, letterSpacing: "0.2em", padding: "4px 10px", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.3)", borderRadius: 99 }}>{tag}</span>
+            ))}
+          </div>
         </div>
+
+        {/* Hero */}
+        {!scores && (
+          <div style={{ marginBottom: 64, textAlign: "center" }}>
+            <h1 style={{
+              fontFamily: "'Arial Black', sans-serif", fontWeight: 900,
+              fontSize: "clamp(3rem, 11vw, 6.5rem)",
+              lineHeight: 0.88, letterSpacing: "-0.04em",
+              color: "#ffffff", margin: "0 0 6px",
+              textShadow: "0 0 80px rgba(255,255,255,0.12)",
+            }}>ONCHAIN</h1>
+            <h1 style={{
+              fontFamily: "'Arial Black', sans-serif", fontWeight: 900,
+              fontSize: "clamp(2.4rem, 9vw, 5.5rem)",
+              lineHeight: 0.88, letterSpacing: "-0.04em",
+              background: "linear-gradient(135deg, #CCFF00 0%, #00E5FF 40%, #9B6DFF 70%, #FF6B9D 100%)",
+              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+              backgroundClip: "text", margin: "0 0 24px",
+              display: "block",
+              padding: "0 4px 8px",
+            }}>CREDIBILITY</h1>
+            <p style={{ fontFamily: "monospace", fontSize: 11, color: "rgba(255,255,255,0.2)", letterSpacing: "0.3em" }}>
+              TRANSPARENT · COMPOSABLE · EARNED
+            </p>
+          </div>
+        )}
 
         {/* Input */}
-        <div className="relative mb-6 group">
-          <div className="flex border border-[#222218] group-focus-within:border-[#CCFF00] transition-colors">
-            <span className="font-mono text-[#CCFF00] text-sm px-4 flex items-center border-r border-[#222218] bg-[#0E0D09] select-none">
-              @
-            </span>
-            <input
-              type="text"
-              placeholder="farcaster username"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleScore()}
-              className="flex-1 bg-transparent text-[#F0EDE6] font-mono text-sm px-4 py-4 outline-none placeholder:text-[#2a2a20]"
-            />
-            <button
-              onClick={handleScore}
-              disabled={loading || !address}
-              className="bg-[#CCFF00] text-[#0E0D09] font-mono text-[10px] tracking-[0.2em] uppercase font-black px-6 hover:bg-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap"
-            >
-              {loading ? (
-                <span className="inline-flex gap-1">
-                  <span className="animate-bounce" style={{ animationDelay: "0ms" }}>·</span>
-                  <span className="animate-bounce" style={{ animationDelay: "150ms" }}>·</span>
-                  <span className="animate-bounce" style={{ animationDelay: "300ms" }}>·</span>
-                </span>
-              ) : "SCORE →"}
-            </button>
-          </div>
+        <div style={{
+          background: "rgba(255,255,255,0.04)",
+          border: "1px solid rgba(255,255,255,0.1)",
+          borderRadius: 99,
+          padding: "6px 6px 6px 24px",
+          display: "flex", alignItems: "center",
+          marginBottom: error ? 16 : 32,
+          backdropFilter: "blur(20px)",
+        }}>
+          <span style={{ fontFamily: "monospace", fontSize: 14, color: "#CCFF00", marginRight: 10, userSelect: "none" }}>@</span>
+          <input
+            type="text"
+            placeholder="farcaster username"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && run()}
+            style={{
+              flex: 1, background: "none", border: "none", outline: "none",
+              fontFamily: "monospace", fontSize: 15, color: "#fff",
+              padding: "10px 0", caretColor: "#CCFF00",
+            }}
+          />
+          <button
+            onClick={run}
+            disabled={loading || !query.trim()}
+            style={{
+              background: loading || !query.trim() ? "rgba(255,255,255,0.06)" : "linear-gradient(135deg, #CCFF00, #00E5FF)",
+              border: "none", borderRadius: 99, cursor: "pointer",
+              fontFamily: "monospace", fontSize: 11, letterSpacing: "0.2em",
+              color: "#060608", fontWeight: 900,
+              padding: "12px 24px", transition: "all 0.3s",
+              opacity: loading || !query.trim() ? 0.4 : 1,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {loading ? "···" : "SCORE →"}
+          </button>
         </div>
+
+        {/* Quick picks */}
+        {!scores && !error && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 16 }}>
+            <span style={{ fontFamily: "monospace", fontSize: 10, color: "rgba(255,255,255,0.2)", letterSpacing: "0.15em", alignSelf: "center" }}>TRY →</span>
+            {["dwr", "jessepollak", "vitalik.eth"].map((u, i) => (
+              <button key={u} onClick={() => setQuery(u)}
+                style={{
+                  background: "rgba(255,255,255,0.04)", border: `1px solid ${DIM_COLORS[i]}33`,
+                  borderRadius: 99, fontFamily: "monospace", fontSize: 11,
+                  color: DIM_COLORS[i] + "99", padding: "6px 14px", cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = DIM_COLORS[i]; (e.target as HTMLElement).style.color = DIM_COLORS[i]; (e.target as HTMLElement).style.boxShadow = `0 0 12px ${DIM_COLORS[i]}44`; }}
+                onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = DIM_COLORS[i] + "33"; (e.target as HTMLElement).style.color = DIM_COLORS[i] + "99"; (e.target as HTMLElement).style.boxShadow = "none"; }}
+              >@{u}</button>
+            ))}
+          </div>
+        )}
 
         {/* Error */}
         {error && (
-          <div className="border border-red-900 bg-red-950/30 text-red-400 font-mono text-xs p-3 mb-6">
+          <div style={{ fontFamily: "monospace", fontSize: 12, color: "#ff6b6b", padding: "12px 16px", marginBottom: 24, background: "rgba(255,100,100,0.08)", borderRadius: 16, border: "1px solid rgba(255,100,100,0.15)" }}>
             ✗ {error}
           </div>
         )}
 
         {/* Results */}
-        {scores && userInfo && (
-          <div className={`transition-all duration-700 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
+        {scores && user && grade && (
+          <div style={{ opacity: ready ? 1 : 0, transform: ready ? "none" : "translateY(20px)", transition: "all 0.6s cubic-bezier(0.16,1,0.3,1)" }}>
 
-            {/* User + Score Ring */}
-            <div className="flex items-center gap-6 mb-6 p-6 border border-[#222218] bg-[#0a0a08]">
-              <div className="relative flex-shrink-0">
-                <ScoreRing score={total} />
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="font-black text-4xl text-[#F0EDE6] leading-none">
-                    <AnimatedNumber value={total} />
-                  </span>
-                  <span className="font-mono text-[10px] text-[#4a4a3a] tracking-widest mt-1">/ 1000</span>
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 mb-3">
-                  {userInfo.avatar && (
-                    <img src={userInfo.avatar} alt={userInfo.username} className="w-10 h-10 rounded-full border border-[#222218]" />
-                  )}
-                  <div>
-                    <p className="font-bold text-[#F0EDE6] text-sm">{userInfo.displayName}</p>
-                    <p className="font-mono text-[10px] text-[#4a4a3a]">@{userInfo.username} · FID {userInfo.fid}</p>
+            {/* Score card */}
+            <div style={{
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 28, padding: "32px",
+              marginBottom: 12, backdropFilter: "blur(20px)",
+              position: "relative", overflow: "hidden",
+            }}>
+              <div style={{
+                position: "absolute", inset: 0, borderRadius: 28, pointerEvents: "none",
+                background: `radial-gradient(ellipse at 20% 50%, ${grade.color}12 0%, transparent 60%)`,
+              }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 32, flexWrap: "wrap" }}>
+                <Ring score={total} active={ready} />
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <span style={{
+                    fontFamily: "monospace", fontSize: 10, letterSpacing: "0.25em", fontWeight: 700,
+                    color: grade.color, padding: "5px 14px",
+                    border: `1px solid ${grade.color}44`, borderRadius: 99,
+                    display: "inline-block", marginBottom: 16,
+                    boxShadow: `0 0 16px ${grade.color}22`,
+                  }}>{grade.label}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                    {user.avatar && <img src={user.avatar} alt={user.username} style={{ width: 44, height: 44, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.1)" }} />}
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: 16, color: "#fff" }}>{user.displayName}</p>
+                      <p style={{ margin: 0, fontFamily: "monospace", fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em" }}>@{user.username} · FID {user.fid}</p>
+                    </div>
                   </div>
-                </div>
-                <p className="font-black text-2xl tracking-tight text-[#CCFF00] mb-2">
-                  {getGrade(total)}
-                </p>
-                <div className="flex gap-4">
-                  <span className="font-mono text-[10px] text-[#4a4a3a]">
-                    <span className="text-[#F0EDE6]">{userInfo.followers.toLocaleString()}</span> followers
-                  </span>
-                  <span className="font-mono text-[10px] text-[#4a4a3a]">
-                    <span className="text-[#F0EDE6]">{userInfo.following.toLocaleString()}</span> following
-                  </span>
+                  <div style={{ display: "flex", gap: 24 }}>
+                    {[{ label: "followers", val: user.followers.toLocaleString() }, { label: "following", val: user.following.toLocaleString() }].map(s => (
+                      <div key={s.label}>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: 18, color: "#fff" }}>{s.val}</p>
+                        <p style={{ margin: 0, fontFamily: "monospace", fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em" }}>{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Dimensions */}
-            <div className="border border-[#222218] divide-y divide-[#222218] mb-4">
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
               {scores.map((d, i) => (
-                <div key={i} className="p-4 hover:bg-[#0a0a08] transition-colors">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[#CCFF00] text-xs font-mono">{d.icon}</span>
+                <div key={i} style={{
+                  background: "rgba(255,255,255,0.025)",
+                  border: `1px solid ${DIM_COLORS[i]}22`,
+                  borderRadius: 20, padding: "18px 22px",
+                  opacity: ready ? 1 : 0,
+                  transform: ready ? "none" : "translateX(-16px)",
+                  transition: `all 0.5s cubic-bezier(0.16,1,0.3,1) ${i * 80}ms`,
+                  position: "relative", overflow: "hidden",
+                }}>
+                  <div style={{
+                    position: "absolute", inset: 0, borderRadius: 20, pointerEvents: "none",
+                    background: `linear-gradient(90deg, ${DIM_COLORS[i]}0a 0%, transparent 50%)`,
+                    borderLeft: `2px solid ${DIM_COLORS[i]}55`,
+                  }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                      <span style={{ fontSize: 16, color: DIM_COLORS[i] }}>{d.icon}</span>
                       <div>
-                        <p className="text-[#F0EDE6] text-sm font-semibold tracking-tight">{d.label}</p>
-                        <p className="text-[#3a3a2a] font-mono text-[10px] tracking-wider">{d.desc}</p>
+                        <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#fff" }}>{d.label}</p>
+                        <p style={{ margin: 0, fontFamily: "monospace", fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.08em", marginTop: 2 }}>{d.desc}</p>
                       </div>
                     </div>
-                    <div className="text-right ml-4">
-                      <span className="font-black text-xl text-[#CCFF00]">
-                        <AnimatedNumber value={d.score} duration={800 + i * 150} />
-                      </span>
-                      <span className="font-mono text-[10px] text-[#3a3a2a]">/{d.max}</span>
+                    <div style={{ textAlign: "right" }}>
+                      <span style={{ fontFamily: "'Arial Black', sans-serif", fontWeight: 900, fontSize: 24, color: DIM_COLORS[i] }}>{d.score}</span>
+                      <span style={{ fontFamily: "monospace", fontSize: 10, color: "rgba(255,255,255,0.2)" }}>/{d.max}</span>
                     </div>
                   </div>
-                  <div className="h-[1px] bg-[#1a1a14]">
-                    <div
-                      className="h-full bg-[#CCFF00] transition-all duration-1000"
-                      style={{
-                        width: `${(d.score / d.max) * 100}%`,
-                        transitionDelay: `${200 + i * 100}ms`,
-                        boxShadow: "0 0 8px #CCFF00"
-                      }}
-                    />
-                  </div>
+                  <Bar score={d.score} max={d.max} delay={300 + i * 100} color={DIM_COLORS[i]} />
                 </div>
               ))}
             </div>
 
             {/* Actions */}
-            <div className="grid grid-cols-2 gap-2">
-              <button className="border border-[#222218] text-[#4a4a3a] font-mono text-[10px] tracking-[0.2em] uppercase py-4 hover:border-[#CCFF00] hover:text-[#CCFF00] transition-all hover:bg-[#CCFF00]/5">
-                SHARE CAST →
-              </button>
-              <button className="border border-[#CCFF00] text-[#CCFF00] font-mono text-[10px] tracking-[0.2em] uppercase py-4 hover:bg-[#CCFF00] hover:text-[#0E0D09] transition-all font-black">
-                MINT NFT →
-              </button>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <button style={{
+                background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 99, color: "rgba(255,255,255,0.5)",
+                fontFamily: "monospace", fontSize: 10, letterSpacing: "0.2em",
+                padding: "16px", cursor: "pointer", transition: "all 0.2s",
+              }}
+              onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = "#00E5FF"; (e.target as HTMLElement).style.color = "#00E5FF"; (e.target as HTMLElement).style.boxShadow = "0 0 16px #00E5FF22"; }}
+              onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)"; (e.target as HTMLElement).style.color = "rgba(255,255,255,0.5)"; (e.target as HTMLElement).style.boxShadow = "none"; }}
+              >SHARE CAST →</button>
+              <button style={{
+                background: "linear-gradient(135deg, #CCFF00, #00E5FF)",
+                border: "none", borderRadius: 99,
+                color: "#060608", fontFamily: "monospace", fontSize: 10,
+                fontWeight: 900, letterSpacing: "0.2em", padding: "16px",
+                cursor: "pointer", transition: "opacity 0.2s",
+              }}
+              onMouseEnter={e => (e.target as HTMLElement).style.opacity = "0.85"}
+              onMouseLeave={e => (e.target as HTMLElement).style.opacity = "1"}
+              >MINT NFT →</button>
             </div>
 
           </div>
         )}
       </div>
+
+      <style>{`
+        @keyframes float1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(40px,30px) scale(1.05)}}
+        @keyframes float2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-30px,40px) scale(0.95)}}
+        @keyframes float3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(30px,-30px) scale(1.08)}}
+        @keyframes float4{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(20px,40px) scale(1.03)}66%{transform:translate(-10px,20px) scale(0.97)}}
+        @keyframes float5{0%,100%{transform:translate(0,0)}50%{transform:translate(-20px,-30px)}}
+        input::placeholder{color:rgba(255,255,255,0.15);}
+        *{box-sizing:border-box;}
+      `}</style>
     </div>
   );
 }
