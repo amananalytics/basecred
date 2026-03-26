@@ -87,11 +87,13 @@ export default function ScoreCard() {
   const total = scores ? scores.reduce((a, b) => a + b.score, 0) : 0;
   const grade = scores ? getGrade(total) : null;
 
-  const run = async () => {
-    if (!query.trim() || loading) return;
+  const run = async (override?: string | React.MouseEvent) => {
+    const q = typeof override === "string" ? override : query;
+    if (!q.trim() || loading) return;
+    setQuery(q);
     setLoading(true); setScores(null); setUser(null); setError(null); setReady(false);
     try {
-      const res = await fetch(`/api/score?username=${encodeURIComponent(query.trim())}`);
+      const res = await fetch(`/api/score?username=${encodeURIComponent(q.trim())}`);
       const data = await res.json();
       if (!res.ok) setError(data.error || "Not found");
       else { setScores(data.scores); setUser(data.user); setTimeout(() => setReady(true), 100); }
@@ -182,7 +184,7 @@ export default function ScoreCard() {
           <span style={{ fontFamily: "monospace", fontSize: 14, color: "#CCFF00", marginRight: 10, userSelect: "none" }}>@</span>
           <input
             type="text"
-            placeholder="farcaster username"
+            placeholder="input farcaster username/UID"
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === "Enter" && run()}
@@ -214,7 +216,7 @@ export default function ScoreCard() {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 16 }}>
             <span style={{ fontFamily: "monospace", fontSize: 10, color: "rgba(255,255,255,0.2)", letterSpacing: "0.15em", alignSelf: "center" }}>TRY →</span>
             {["dwr", "jessepollak", "vitalik.eth"].map((u, i) => (
-              <button key={u} onClick={() => setQuery(u)}
+              <button key={u} onClick={() => run(u)}
                 style={{
                   background: "rgba(255,255,255,0.04)", border: `1px solid ${DIM_COLORS[i]}33`,
                   borderRadius: 99, fontFamily: "monospace", fontSize: 11,
@@ -317,15 +319,23 @@ export default function ScoreCard() {
 
             {/* Actions */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <button style={{
-                background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 99, color: "rgba(255,255,255,0.5)",
-                fontFamily: "monospace", fontSize: 10, letterSpacing: "0.2em",
-                padding: "16px", cursor: "pointer", transition: "all 0.2s",
-              }}
-              onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = "#00E5FF"; (e.target as HTMLElement).style.color = "#00E5FF"; (e.target as HTMLElement).style.boxShadow = "0 0 16px #00E5FF22"; }}
-              onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)"; (e.target as HTMLElement).style.color = "rgba(255,255,255,0.5)"; (e.target as HTMLElement).style.boxShadow = "none"; }}
-              >SHARE CAST →</button>
+              <button
+  onClick={() => {
+    const text = `my basecred score: ${total}/1000 — ${grade.label}\n\ncast quality: ${scores[0].score}/200\nonchain activity: ${scores[1].score}/200\nsocial consistency: ${scores[2].score}/200\ncommunity contribution: ${scores[3].score}/200\nbuilder signal: ${scores[4].score}/200\n\ncheck yours 👇\nbasecred-phi.vercel.app`;
+    const url = `https://warpcast.com/~/compose?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank");
+  }}
+  style={{
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 99, color: "rgba(255,255,255,0.5)",
+    fontFamily: "monospace", fontSize: 10,
+    letterSpacing: "0.2em", padding: "16px",
+    cursor: "pointer", transition: "all 0.2s",
+  }}
+  onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = "#00E5FF"; (e.target as HTMLElement).style.color = "#00E5FF"; (e.target as HTMLElement).style.boxShadow = "0 0 16px #00E5FF22"; }}
+  onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)"; (e.target as HTMLElement).style.color = "rgba(255,255,255,0.5)"; (e.target as HTMLElement).style.boxShadow = "none"; }}
+>SHARE CAST →</button>
               <button style={{
                 background: "linear-gradient(135deg, #CCFF00, #00E5FF)",
                 border: "none", borderRadius: 99,

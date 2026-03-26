@@ -21,7 +21,7 @@ async function getUserCasts(fid: number) {
 }
 
 function scoreCastQuality(casts: any[]): number {
-  if (!casts.length) return 0;
+  if (!casts || !casts.length) return 0;
   const total = casts.reduce((acc, cast) => {
     const likes = cast.reactions?.likes_count || 0;
     const recasts = cast.reactions?.recasts_count || 0;
